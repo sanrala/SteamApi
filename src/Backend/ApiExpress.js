@@ -63,26 +63,40 @@ app.get('/steam/appdetails/:appid', async (req, res) => {
 
 app.get('/steam/popular', async (req, res) => {
   try {
-    const popularGames = games.slice(0, 5); // exemple : 5 jeux populaires
     const detailedGames = [];
+    const gamesToCheck = games.slice(0, 50);
 
-    for (const game of popularGames) {
-      const response = await fetch(`https://store.steampowered.com/api/appdetails?appids=${game.appid}&l=fr`, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0'
+    for (const game of gamesToCheck) {
+      try {
+        const response = await fetch(`https://store.steampowered.com/api/appdetails?appids=${game.appid}&l=fr`, {
+          headers: { 'User-Agent': 'Mozilla/5.0' }
+        });
+
+        const data = await response.json();
+        const appData = data[game.appid];
+
+        if (appData?.success && appData?.data) {
+          const details = appData.data;
+          const recs = details?.recommendations?.total ?? 0;
+          const meta = details?.metacritic?.score ?? 0;
+
+          const popularityScore = (recs * 0.7) + (meta * 10 * 0.3);
+
+          detailedGames.push({
+            ...details,
+            popularityScore
+          });
         }
-      });
-
-      const data = await response.json();
-
-      if (data[game.appid] && data[game.appid].success) {
-        detailedGames.push(data[game.appid].data);
+      } catch (err) {
+        console.warn(`⚠️ Erreur interne pour le jeu ${game.appid}: ${err.message}`);
       }
     }
 
-    res.json(detailedGames);
+    detailedGames.sort((a, b) => b.popularityScore - a.popularityScore);
+    res.json(detailedGames.slice(0, 10));
+
   } catch (error) {
-    console.error("Erreur dans /steam/popular :", error.message);
+    console.error("❌ Erreur globale dans /steam/popular :", error.message);
     res.status(500).json({ error: "Erreur lors de la récupération des jeux populaires" });
   }
 });

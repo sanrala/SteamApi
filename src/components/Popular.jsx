@@ -29,6 +29,15 @@ const Popular = () => {
   if (games.length === 0) {
     return <div className="text-center mt-5 text-light">Chargement des jeux...</div>;
   }
+  
+  if (!games[index]) {
+    return <div className="text-center mt-5 text-danger">Jeu indisponible ou données incomplètes.</div>;
+  }
+  
+  const game = games[index];
+  
+  // Ici ton JSX normal pour l’affichage du jeu
+  
 
   const getThumbnails = () => {
     const thumbnails = [];
