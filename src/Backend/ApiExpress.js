@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import fetch from 'node-fetch'; // Nécessaire si tu utilises Node.js < 18
 
+
 const app = express();
 const PORT = 4000;
 
@@ -56,6 +57,37 @@ app.get('/steam/appdetails/:appid', async (req, res) => {
     res.status(500).json({ error: "Erreur lors de la récupération des données Steam" });
   }
 });
+
+
+// ➕ À ajouter dans ApiExpress.js (en bas)
+
+app.get('/steam/popular', async (req, res) => {
+  try {
+    const popularGames = games.slice(0, 5); // exemple : 5 jeux populaires
+    const detailedGames = [];
+
+    for (const game of popularGames) {
+      const response = await fetch(`https://store.steampowered.com/api/appdetails?appids=${game.appid}&l=fr`, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0'
+        }
+      });
+
+      const data = await response.json();
+
+      if (data[game.appid] && data[game.appid].success) {
+        detailedGames.push(data[game.appid].data);
+      }
+    }
+
+    res.json(detailedGames);
+  } catch (error) {
+    console.error("Erreur dans /steam/popular :", error.message);
+    res.status(500).json({ error: "Erreur lors de la récupération des jeux populaires" });
+  }
+});
+
+
 
 // Démarrage du serveur
 app.listen(PORT, () => {

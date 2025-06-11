@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Popular from "./../components/Popular"
-
+import Nav from "./Navbar/Navbar"
 
 const GAMES_PER_PAGE = 10;
 
@@ -60,7 +60,10 @@ const LastGames = () => {
   const totalPages = Math.ceil(filteredGames.length / GAMES_PER_PAGE);
 
   return (
+    <div>
+    <Nav/>
     <div className="container my-5">
+    
       <h2 className="mb-4 text-center">🎮 Jeux disponibles</h2>
 
       {/* Filtres */}
@@ -171,6 +174,7 @@ const LastGames = () => {
           </button>
         </div>
       )}
+    </div>
     </div>
   );
 };
