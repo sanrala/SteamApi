@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import Popular from "./../components/Popular"
+
 
 const GAMES_PER_PAGE = 10;
 
@@ -107,6 +109,17 @@ const LastGames = () => {
           Aucun jeu ne correspond aux critères sélectionnés.
         </div>
       )}
+
+
+      {/* populaires*/}
+
+      <Popular/>
+      <Link to="/popular">Jeux Populaires</Link>
+
+
+
+
+      FIN
 
       {/* Liste de jeux */}
       <div className="row g-4">
