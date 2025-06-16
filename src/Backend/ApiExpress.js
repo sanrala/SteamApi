@@ -2,19 +2,17 @@ import express from 'express';
 import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
-import fetch from 'node-fetch'; // Nécessaire si tu utilises Node.js < 18
-
+import fetch from 'node-fetch'; // Si Node < 18
 
 const app = express();
 const PORT = 4000;
 
 app.use(cors());
 
-// Chemin absolu vers games.json
-const gamesFile = path.resolve('./public/games.json');
+// Chargement du fichier games.json
+const gamesFile = path.resolve('./games.json');
 let games = [];
 
-// Chargement du fichier JSON
 fs.readFile(gamesFile, 'utf8', (err, data) => {
   if (err) {
     console.error(`❌ Erreur de lecture du fichier games.json: ${err.message}`);
@@ -40,41 +38,36 @@ app.get('/api/game/:appid', (req, res) => {
   else res.status(404).json({ error: 'Not found' });
 });
 
-// Proxy vers l'API Steam officielle
+// Proxy vers l'API Steam pour les détails d'un jeu
 app.get('/steam/appdetails/:appid', async (req, res) => {
   const { appid } = req.params;
 
   try {
-    const response = await fetch(`https://store.steampowered.com/api/appdetails?appids=${appid}&l=fr`, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0' // Évite les réponses HTML
-      }
-    });
+    const response = await fetch(`https://store.steampowered.com/api/appdetails?appids=${appid}&l=fr`);
+    const data = await response.json();
 
-    const contentType = response.headers.get("content-type");
-    if (!contentType || !contentType.includes("application/json")) {
-      throw new Error("Réponse non-JSON de Steam");
+    const appData = data?.[appid];
+
+    if (!appData?.success || !appData.data || appData.data.type !== 'game') {
+      console.warn(`⛔ Données Steam invalides pour appid ${appid}`);
+      return res.status(404).json({ error: 'Données Steam invalides' });
     }
 
-    const json = await response.json();
-    if (json[appid]?.success) {
-      res.json(json[appid].data);
-    } else {
-      res.status(404).json({ error: "Données non trouvées pour cet appid" });
-    }
-  } catch (error) {
-    console.error(`❌ Erreur fetch Steam API (appid ${appid}):`, error.message);
-    res.status(500).json({ error: "Erreur lors de la récupération des données Steam" });
+    res.json(appData.data); // ✅ Réponse OK
+  } catch (err) {
+    console.error(`❌ Erreur Steam API pour appid ${appid} :`, err.message);
+    res.status(500).json({ error: 'Erreur serveur Steam' });
   }
 });
 
 
-// ➕ À ajouter dans ApiExpress.js (en bas)
 
-app.get('/steam/popular', async (req, res) => {
+// Route pour les titres populaires
+app.get('/steam/popular-titles', async (req, res) => {
   try {
-    const detailedGames = [];
-    const gamesToCheck = games.slice(0, 30); // réduis à 30 pour aller + vite
+    // ⚠️ Ne garde que les jeux avec appid valide
+    const gamesToCheck = games.filter(g => g.appid && typeof g.appid === 'number').slice(0, 100);
+    const results = [];
 
     for (const game of gamesToCheck) {
       try {
@@ -84,49 +77,94 @@ app.get('/steam/popular', async (req, res) => {
 
         const contentType = response.headers.get("content-type");
         if (!contentType || !contentType.includes("application/json")) {
-          console.warn(`⚠️ Réponse non JSON pour appid ${game.appid}`);
+          console.warn(`⛔ Appid ${game.appid} => réponse non JSON`);
           continue;
         }
 
         const data = await response.json();
-        const appData = data[game.appid];
-
-        if (appData?.success && appData?.data?.type === 'game') {
-          const details = appData.data;
-          const recs = details?.recommendations?.total ?? 0;
-          const meta = details?.metacritic?.score ?? 0;
-
-          const popularityScore = (recs * 0.7) + (meta * 10 * 0.3);
-
-          detailedGames.push({
-            appid: game.appid,
-            name: details.name,
-            header_image: details.header_image,
-            short_description: details.short_description,
-            release_date: details.release_date?.date,
-            popularityScore,
-          });
+        const gameData = data?.[game.appid.toString()];
+        if (!gameData?.success || !gameData?.data || gameData.data.type !== "game") {
+          console.warn(`⛔ Appid ${game.appid} ignoré : type ou données invalides`);
+          continue;
         }
+
+        const details = gameData.data;
+        const recs = details?.recommendations?.total ?? 0;
+        const meta = details?.metacritic?.score ?? 0;
+        const score = (recs * 0.7) + (meta * 10 * 0.3);
+
+        results.push({ title: details.name, score });
       } catch (err) {
-        console.warn(`⚠️ Erreur appid ${game.appid} : ${err.message}`);
+        console.warn(`⚠️ Appid ${game.appid} échoué :`, err.message);
       }
 
-      // Petite pause entre chaque requête (100 ms)
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(r => setTimeout(r, 250)); // Pause pour éviter d'être bloqué
     }
 
-    detailedGames.sort((a, b) => b.popularityScore - a.popularityScore);
-    res.json(detailedGames.slice(0, 10)); // Top 10
+    // 🔢 Trie par score décroissant
+    results.sort((a, b) => b.score - a.score);
+
+    console.log("📊 Résultats populaires :", results.slice(0, 10)); // Log utile
+    res.json(results.slice(0, 10));
   } catch (error) {
-    console.error("❌ Erreur globale dans /steam/popular :", error.message);
-    res.status(500).json({ error: "Erreur récupération jeux populaires" });
+    console.error("❌ Erreur /steam/popular-titles :", error.message);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+});
+
+app.get('/api/metacritic/:appid', async (req, res) => {
+  const { appid } = req.params;
+
+  try {
+    const response = await fetch(`https://store.steampowered.com/api/appdetails?appids=${appid}&l=fr`, {
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
+
+    const json = await response.json();
+    const appData = json[appid];
+
+    if (appData?.success && appData.data?.metacritic) {
+      res.json({ score: appData.data.metacritic.score });
+    } else {
+      res.json({ score: null });
+    }
+  } catch (error) {
+    console.error(`❌ Erreur metacritic ${appid}:`, error.message);
+    res.status(500).json({ error: "Erreur serveur Steam" });
+  }
+});
+
+
+app.get('/api/recommendations/:appid', async (req, res) => {
+  const { appid } = req.params;
+
+  try {
+    const response = await fetch(`https://store.steampowered.com/api/appdetails?appids=${appid}&l=fr`, {
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
+
+    const json = await response.json();
+    const appData = json[appid];
+
+    if (appData?.success && appData.data?.recommendations) {
+      res.json({ total: appData.data.recommendations.total });
+    } else {
+      res.json({ total: null });
+    }
+  } catch (error) {
+    console.error(`❌ Erreur recommandations ${appid}:`, error.message);
+    res.status(500).json({ error: "Erreur serveur Steam" });
   }
 });
 
 
 
+app.get('/api/games', (req, res) => {
+  res.json(games);
+});
 
-// Démarrage du serveur
+
+// Lancement du serveur
 app.listen(PORT, () => {
   console.log(`✅ API démarrée sur http://localhost:${PORT}`);
 });
